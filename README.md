@@ -13,6 +13,13 @@
 * 🎯 **Direct-to-inventory mode** *(optional)* – harvested items can go straight into your inventory instead of dropping on the ground
 
 ---
+## 📂​ Dowload 
+
+CurseForge: https://www.curseforge.com/minecraft/mc-mods/autosow-by-neni-o
+
+Modrinth: https://modrinth.com/mod/autosow-by-neni-o
+
+---
 
 ## ⚙ Configuration
 
