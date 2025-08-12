@@ -1,11 +1,11 @@
 modLoader="javafml"
-loaderVersion="[51,)"
+loaderVersion="[1,)"
 license="MIT"
 
 [[mods]]
 modId="autosow"
 version="2.0.0"
-displayName="AutoSow"
+displayName="Auto Sow"
 authors="Neni-o"
 description='''
 Right-click a mature crop with its corresponding item to auto-harvest and instantly replant.
@@ -43,18 +43,7 @@ Extra features:
 
     Sweet berry bushes can be harvested at age 1–3, with berry count based on maturity.
 '''
-logoFile="Autosow.png"
 
-[[dependencies.autosow]]
-modId="forge"
-mandatory=true
-versionRange="[51,)"
-ordering="NONE"
-side="BOTH"
-
-[[dependencies.autosow]]
-modId="minecraft"
-mandatory=true
-versionRange="[1.21.4,1.21.5)"
-ordering="NONE"
-side="BOTH"
+# (opcjonalnie) minimalna wersja Javy
+[mods.features]
+java_version="[21,)"

@@ -1,26 +1,26 @@
 package com.nenio.autosow;
 
-import net.minecraftforge.common.ForgeConfigSpec;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
 public class Config {
-    public static final ForgeConfigSpec SPEC;
+    public static final ModConfigSpec SPEC;
 
-    public static final ForgeConfigSpec.BooleanValue ENABLED;
-    public static final ForgeConfigSpec.BooleanValue CONSUME_ITEM;
-    public static final ForgeConfigSpec.BooleanValue DIRECT_TO_INVENTORY;
+    public static final ModConfigSpec.BooleanValue ENABLED;
+    public static final ModConfigSpec.BooleanValue CONSUME_ITEM;
+    public static final ModConfigSpec.BooleanValue DIRECT_TO_INVENTORY;
 
-    public static final ForgeConfigSpec.BooleanValue ALLOW_WHEAT;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_CARROTS;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_POTATOES;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_BEETROOTS;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_TORCHFLOWER;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_NETHER_WART;
-    public static final ForgeConfigSpec.BooleanValue ALLOW_COCOA;
+    public static final ModConfigSpec.BooleanValue ALLOW_WHEAT;
+    public static final ModConfigSpec.BooleanValue ALLOW_CARROTS;
+    public static final ModConfigSpec.BooleanValue ALLOW_POTATOES;
+    public static final ModConfigSpec.BooleanValue ALLOW_BEETROOTS;
+    public static final ModConfigSpec.BooleanValue ALLOW_TORCHFLOWER;
+    public static final ModConfigSpec.BooleanValue ALLOW_NETHER_WART;
+    public static final ModConfigSpec.BooleanValue ALLOW_COCOA;
 
-    public static final ForgeConfigSpec.BooleanValue WHOLE_MELON_DROP;
+    public static final ModConfigSpec.BooleanValue WHOLE_MELON_DROP;
 
     static {
-        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+        ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
         builder.push("General");
         ENABLED = builder.comment("Enable or disable the AutoSow mod").define("enabled", true);
