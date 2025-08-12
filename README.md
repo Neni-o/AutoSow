@@ -9,7 +9,7 @@
 * 🌾 **Supported crops**: Wheat, Carrots, Potatoes, Beetroots, Torchflower, Nether Wart, Cocoa Beans
 * ⚙ **Per-crop configuration** – enable or disable any supported crop individually in the config file
 * 🌱 **Seed consumption toggle** – choose whether replanting uses up seeds/planting items or not
-* 🤖 **Dispenser automation** – dispensers can harvest and replant most crops when loaded with the correct seeds (Cocoa Beans excluded for balance)
+* 🤖 **Dispenser support** – use dispenser(with shears) to harvest melons, pumpkins and sweet berries
 * 🎯 **Direct-to-inventory mode** *(optional)* – harvested items can go straight into your inventory instead of dropping on the ground
 
 ---
