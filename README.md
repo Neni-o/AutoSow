@@ -9,8 +9,15 @@
 * 🌾 **Supported crops**: Wheat, Carrots, Potatoes, Beetroots, Torchflower, Nether Wart, Cocoa Beans
 * ⚙ **Per-crop configuration** – enable or disable any supported crop individually in the config file
 * 🌱 **Seed consumption toggle** – choose whether replanting uses up seeds/planting items or not
-* 🤖 **Dispenser automation** – dispensers can harvest and replant most crops when loaded with the correct seeds (Cocoa Beans excluded for balance)
+* 🤖 **Dispenser support** – use dispenser(with shears) to harvest melons, pumpkins and sweet berries
 * 🎯 **Direct-to-inventory mode** *(optional)* – harvested items can go straight into your inventory instead of dropping on the ground
+
+---
+## 📂​ Dowload 
+
+CurseForge: https://www.curseforge.com/minecraft/mc-mods/autosow-by-neni-o
+
+Modrinth: https://modrinth.com/mod/autosow-by-neni-o
 
 ---
 
@@ -49,12 +56,18 @@ After the first run, a configuration file will be generated in:
    * The crop is instantly harvested and replanted at growth stage 0.
    * If *Direct-to-inventory* is enabled, the drops go straight to your inventory.
 
-2. **Dispenser Automation**
+2. **Dispenser Harvester**
 
-   * Place a dispenser facing a mature crop.
-   * Load it with the correct seeds or planting items.
-   * When powered, the dispenser will harvest and replant the crop automatically.
-   * Works with Wheat, Carrots, Potatoes, Beetroots, Torchflower, and Nether Wart (Cocoa Beans excluded).
+* Place a dispenser facing a fully grown melon block.
+* Load it with shears.
+* When powered by redstone, the dispenser will automatically harvest the melon:
+  - If `WHOLE_MELON_DROP` is set to `true` in the config → drops a whole melon.
+  - If set to `false` → drops several melon slices (3–7).
+* Shears lose 1 durability point for each harvest.
+* The same mechanic works for:
+  - Pumpkins → always drops a whole pumpkin.
+  - Sweet Berries → drops 2–3 berries depending on bush age.
+
 
 3. **Special Cases**
 
