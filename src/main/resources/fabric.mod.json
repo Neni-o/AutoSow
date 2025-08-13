@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "autosow",
+  "version": "2.0.0",
+  "name": "Auto Sow",
+  "description": "Right-click a mature crop with its corresponding item to auto-harvest and instantly replant. Also works with dispensers.",
+  "authors": [ "Neni-o" ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [ "com.nenio.autosow.AutoSow" ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.21",
+    "fabric-api": ">=0.102.0+1.21"
+  },
+  "contact": {},
+  "icons": {}
+}

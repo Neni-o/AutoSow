@@ -1,286 +1,269 @@
 package com.nenio.autosow;
 
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.dispenser.BlockSource;
-import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
-import net.minecraft.core.dispenser.DispenseItemBehavior;
-import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.CropBlock;
-import net.minecraft.world.level.block.DispenserBlock;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.ModLoadingContext;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.config.ModConfig;
-import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.items.ItemHandlerHelper;
+import net.minecraft.block.*;
+import net.minecraft.block.dispenser.ItemDispenserBehavior;
+import net.minecraft.block.dispenser.DispenserBehavior;
+import net.minecraft.entity.ItemEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPointer;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.world.World;
 
 import java.util.List;
 
-@Mod(AutoSow.MODID)
-public class AutoSow {
+public class AutoSow implements ModInitializer {
     public static final String MODID = "autosow";
 
-    public AutoSow(IEventBus modBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
-
-        modBus.addListener(AutoSow::onCommonSetup);
-
-        NeoForge.EVENT_BUS.register(this);
+    @Override
+    public void onInitialize() {
+        Config.load();
+        registerRightClick();
+        registerDispenserShears();
     }
 
-    /* ===================== Right-click handler (player) ===================== */
+    /* ===================== Right-click (player) ===================== */
 
-    @SubscribeEvent
-    public void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        Level level = event.getLevel();
-        if (level.isClientSide) return; // server side only
-        if (event.getHand() != InteractionHand.MAIN_HAND) return; // avoid off-hand double trigger
-        if (!Config.ENABLED.get()) return;
+    private void registerRightClick() {
+        UseBlockCallback.EVENT.register((PlayerEntity player, World world, Hand hand, BlockHitResult hit) -> {
+            if (world.isClient) return ActionResult.PASS;
+            if (hand != Hand.MAIN_HAND) return ActionResult.PASS;
+            if (!Config.ENABLED) return ActionResult.PASS;
 
-        Player player = event.getEntity();
-        BlockPos pos = event.getPos();
-        BlockState state = level.getBlockState(pos);
-        Block block = state.getBlock();
+            ServerWorld server = (ServerWorld) world;
+            BlockPos pos = hit.getBlockPos();
+            BlockState state = world.getBlockState(pos);
+            Block block = state.getBlock();
 
-        if (block == Blocks.SWEET_BERRY_BUSH && state.hasProperty(BlockStateProperties.AGE_3)) {
-            int age = state.getValue(BlockStateProperties.AGE_3);
-            if (age >= 2 && age <= 3) {
-                int min, max;
-                switch (age) {
-                    case 2 -> { min = 1; max = 2; }
-                    default -> { min = 2; max = 3; }
-                }
-                int count = min + level.random.nextInt(max - min + 1);
+            // Sweet berries — zbiór bez sadzenia
+            if (block == Blocks.SWEET_BERRY_BUSH && state.contains(Properties.AGE_3)) {
+                int age = state.get(Properties.AGE_3);
+                if (age >= 2) {
+                    int min = (age == 2) ? 1 : 2;
+                    int max = (age == 2) ? 2 : 3;
+                    int count = min + server.random.nextInt(max - min + 1);
 
-                if (Config.DIRECT_TO_INVENTORY.get()) {
-                    ItemHandlerHelper.giveItemToPlayer(player, new ItemStack(Items.SWEET_BERRIES, count));
-                } else {
-                    Block.popResource((ServerLevel) level, pos, new ItemStack(Items.SWEET_BERRIES, count));
-                }
-
-                level.setBlock(pos, state.setValue(BlockStateProperties.AGE_3, 1), Block.UPDATE_ALL);
-
-                event.setCanceled(true);
-                event.setCancellationResult(InteractionResult.SUCCESS);
-                return;
-            }
-        }
-
-        // Standard flow for whitelisted crops (wheat, carrots, potatoes, beetroots, torchflower, nether wart, cocoa)
-        if (!isWhitelistedBlock(block)) return;
-        if (!isMature(state)) return;
-
-        // Player must hold the matching seed/item
-        ItemStack held = event.getItemStack();
-        if (held.isEmpty() || !heldMatchesBlock(held, block)) return;
-
-        // Resolve what to replant
-        Block target = resolveTargetReplantBlock(block);
-        if (target == Blocks.AIR) return;
-
-        boolean directToInv = Config.DIRECT_TO_INVENTORY.get();
-
-        if (directToInv) {
-            // 1) Compute vanilla drops without actually breaking the block
-            List<ItemStack> drops = Block.getDrops(state, (ServerLevel) level, pos, null, player, held);
-
-            // 2) Remove the block without drops
-            level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-
-            // 3) Optionally consume one item (seeds/beans/wart; not used for berries)
-            if (Config.CONSUME_ITEM.get() && !player.getAbilities().instabuild) {
-                held.shrink(1);
-            }
-
-            // 4) Replant
-            replant(level, pos, state, target);
-
-            // 5) Give drops to player's inventory
-            for (ItemStack drop : drops) {
-                if (!drop.isEmpty()) {
-                    ItemHandlerHelper.giveItemToPlayer(player, drop.copy());
+                    if (Config.DIRECT_TO_INVENTORY) {
+                        player.giveItemStack(new ItemStack(Items.SWEET_BERRIES, count));
+                    } else {
+                        drop(server, pos, new ItemStack(Items.SWEET_BERRIES, count));
+                    }
+                    world.setBlockState(pos, state.with(Properties.AGE_3, 1), Block.NOTIFY_ALL);
+                    return ActionResult.SUCCESS;
                 }
             }
 
-        } else {
-            // Classic path: break the block and let drops fall on the ground
-            boolean destroyed = level.destroyBlock(pos, true, player);
-            if (!destroyed) return;
+            // klasyczny flow
+            if (!isWhitelistedBlock(block)) return ActionResult.PASS;
+            if (!isMature(state)) return ActionResult.PASS;
 
-            if (Config.CONSUME_ITEM.get() && !player.getAbilities().instabuild) {
-                held.shrink(1);
+            ItemStack held = player.getStackInHand(hand);
+            if (held.isEmpty() || !heldMatchesBlock(held, block)) return ActionResult.PASS;
+
+            Block target = resolveTargetReplantBlock(block);
+            if (target == Blocks.AIR) return ActionResult.PASS;
+
+            if (Config.DIRECT_TO_INVENTORY) {
+                // 1) policz dropy
+                List<ItemStack> drops = Block.getDroppedStacks(state, server, pos, null, player, held);
+                // 2) usuń blok bez dropów
+                world.setBlockState(pos, Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL | Block.SKIP_DROPS);
+                // 3) zużyj 1 nasiono jeśli trzeba
+                if (Config.CONSUME_ITEM && !player.getAbilities().creativeMode) {
+                    held.decrement(1);
+                }
+                // 4) zasadź
+                replant(world, pos, state, target);
+                // 5) daj dropy do eq
+                for (ItemStack d : drops) if (!d.isEmpty()) player.giveItemStack(d.copy());
+            } else {
+                boolean destroyed = world.breakBlock(pos, true, player);
+                if (!destroyed) return ActionResult.PASS;
+                if (Config.CONSUME_ITEM && !player.getAbilities().creativeMode) {
+                    held.decrement(1);
+                }
+                replant(world, pos, state, target);
             }
 
-            replant(level, pos, state, target);
-        }
-
-        event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.SUCCESS);
+            return ActionResult.SUCCESS;
+        });
     }
 
-    /** Replant logic depending on target type. */
-    private static void replant(Level level, BlockPos pos, BlockState previousState, Block target) {
+    /** Replant zależnie od typu. */
+    private static void replant(World world, BlockPos pos, BlockState previousState, Block target) {
         if (target instanceof CropBlock crop) {
-            // Ensure farmland
-            BlockPos soilPos = pos.below();
-            if (!level.getBlockState(soilPos).is(Blocks.FARMLAND)) {
-                level.setBlock(soilPos, Blocks.FARMLAND.defaultBlockState(), Block.UPDATE_ALL);
+            BlockPos soilPos = pos.down();
+            if (!world.getBlockState(soilPos).isOf(Blocks.FARMLAND)) {
+                world.setBlockState(soilPos, Blocks.FARMLAND.getDefaultState(), Block.NOTIFY_ALL);
             }
-            level.setBlock(pos, crop.getStateForAge(0), Block.UPDATE_ALL);
+            world.setBlockState(pos, crop.withAge(0), Block.NOTIFY_ALL);
 
         } else if (target == Blocks.NETHER_WART) {
-            // Ensure soul sand
-            BlockPos soilPos = pos.below();
-            if (!level.getBlockState(soilPos).is(Blocks.SOUL_SAND)) {
-                level.setBlock(soilPos, Blocks.SOUL_SAND.defaultBlockState(), Block.UPDATE_ALL);
+            BlockPos soilPos = pos.down();
+            if (!world.getBlockState(soilPos).isOf(Blocks.SOUL_SAND)) {
+                world.setBlockState(soilPos, Blocks.SOUL_SAND.getDefaultState(), Block.NOTIFY_ALL);
             }
-            level.setBlock(pos, Blocks.NETHER_WART.defaultBlockState()
-                    .setValue(BlockStateProperties.AGE_3, 0), Block.UPDATE_ALL);
+            world.setBlockState(pos, Blocks.NETHER_WART.getDefaultState().with(Properties.AGE_3, 0), Block.NOTIFY_ALL);
 
         } else if (target == Blocks.COCOA) {
-            // Reuse same facing; ensure jungle wood support
-            Direction facing = previousState.hasProperty(BlockStateProperties.HORIZONTAL_FACING)
-                    ? previousState.getValue(BlockStateProperties.HORIZONTAL_FACING)
-                    : Direction.NORTH;
+            // 1) spróbuj wziąć facing ze starego stanu
+            Direction facing = null;
+            if (previousState.contains(Properties.HORIZONTAL_FACING)) {
+                facing = previousState.get(Properties.HORIZONTAL_FACING);
+            } else if (previousState.contains(Properties.FACING)) {
+                Direction f = previousState.get(Properties.FACING);
+                if (f.getAxis().isHorizontal()) facing = f;
+            }
 
-            BlockPos supportPos = pos.relative(facing.getOpposite());
-            BlockState support = level.getBlockState(supportPos);
-            if (!isValidCocoaSupport(support.getBlock())) return;
+            // 2) jeśli brak - wykryj po sąsiednim dżunglowym drewnie
+            if (facing == null) {
+                for (Direction d : Direction.values()) {
+                    if (!d.getAxis().isHorizontal()) continue;
+                    BlockPos supportProbe = pos.offset(d.getOpposite());
+                    if (isValidCocoaSupport(world.getBlockState(supportProbe).getBlock())) {
+                        facing = d;
+                        break;
+                    }
+                }
+            }
+            if (facing == null) return; // nie mamy poprawnego kierunku
 
-            BlockState cocoa0 = Blocks.COCOA.defaultBlockState()
-                    .setValue(BlockStateProperties.AGE_2, 0)
-                    .setValue(BlockStateProperties.HORIZONTAL_FACING, facing);
-            level.setBlock(pos, cocoa0, Block.UPDATE_ALL);
+            // 3) weryfikacja podpory
+            BlockPos supportPos = pos.offset(facing.getOpposite());
+            if (!isValidCocoaSupport(world.getBlockState(supportPos).getBlock())) return;
+
+            // 4) sadzenie 0-age + kierunek (obsługa FACING/HORIZONTAL_FACING)
+            BlockState cocoa0 = cocoaAge0State();
+            if (cocoa0.contains(Properties.HORIZONTAL_FACING)) {
+                cocoa0 = cocoa0.with(Properties.HORIZONTAL_FACING, facing);
+            } else if (cocoa0.contains(Properties.FACING)) {
+                cocoa0 = cocoa0.with(Properties.FACING, facing);
+            }
+            world.setBlockState(pos, cocoa0, Block.NOTIFY_ALL);
         }
     }
 
-    /* ===================== Dispenser behaviors (shears) ===================== */
+    /* ===================== Dispenser: nożyczki ===================== */
 
-    private static void onCommonSetup(final FMLCommonSetupEvent event) {
-        event.enqueueWork(() -> {
-            DispenseItemBehavior shearsBehavior = new DefaultDispenseItemBehavior() {
-                @Override
-                protected ItemStack execute(BlockSource source, ItemStack stack) {
-                    Level level = source.level();
-                    Direction dir = source.state().getValue(DispenserBlock.FACING);
-                    BlockPos targetPos = source.pos().relative(dir);
-                    BlockState state = level.getBlockState(targetPos);
-                    Block block = state.getBlock();
+    private void registerDispenserShears() {
+        DispenserBehavior shears = new ItemDispenserBehavior() {
+            @Override
+            protected ItemStack dispenseSilently(BlockPointer pointer, ItemStack stack) {
+                ServerWorld server = pointer.world();
+                BlockPos pos = pointer.pos();
+                Direction dir = pointer.state().get(DispenserBlock.FACING);
+                BlockPos targetPos = pos.offset(dir);
+                BlockState state = server.getBlockState(targetPos);
+                Block block = state.getBlock();
 
-                    if (!(level instanceof ServerLevel server)) {
-                        return super.execute(source, stack);
-                    }
-
-                    // === MELON ===
-                    if (block == Blocks.MELON) {
-                        server.setBlock(targetPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-                        if (Config.WHOLE_MELON_DROP.get()) {
-                            Block.popResource(server, targetPos, new ItemStack(Items.MELON));
-                        } else {
-                            List<ItemStack> drops = Block.getDrops(state, server, targetPos, null, null, ItemStack.EMPTY);
-                            if (drops.isEmpty()) {
-                                int count = 3 + server.random.nextInt(5); // 3–7 slices
-                                drops = List.of(new ItemStack(Items.MELON_SLICE, count));
-                            }
-                            for (ItemStack drop : drops) {
-                                if (!drop.isEmpty()) Block.popResource(server, targetPos, drop);
-                            }
+                // MELON
+                if (block == Blocks.MELON) {
+                    server.setBlockState(targetPos, Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL);
+                    if (Config.WHOLE_MELON_DROP) {
+                        drop(server, targetPos, new ItemStack(Items.MELON));
+                    } else {
+                        List<ItemStack> drops = Block.getDroppedStacks(state, server, targetPos, null);
+                        if (drops.isEmpty()) {
+                            int count = 3 + server.random.nextInt(5);
+                            drops = List.of(new ItemStack(Items.MELON_SLICE, count));
                         }
-                        stack.hurtAndBreak(1, server, null, null);
-                        return stack;
+                        for (ItemStack d : drops) drop(server, targetPos, d);
                     }
-
-                    // === PUMPKIN === (always whole)
-                    if (block == Blocks.PUMPKIN) {
-                        server.setBlock(targetPos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
-                        Block.popResource(server, targetPos, new ItemStack(Items.PUMPKIN));
-                        stack.hurtAndBreak(1, server, null, null);
-                        return stack;
-                    }
-
-                    // === SWEET BERRY BUSH === (harvest when AGE_3 is 1..3; yield depends on age)
-                    if (block == Blocks.SWEET_BERRY_BUSH && state.hasProperty(BlockStateProperties.AGE_3)) {
-                        int age = state.getValue(BlockStateProperties.AGE_3); // 0..3
-                        if (age >= 1 && age <= 3) {
-                            int min, max;
-                            switch (age) {
-                                case 1 -> { min = 1; max = 1; }   // exactly 1
-                                case 2 -> { min = 1; max = 2; }   // 1–2
-                                default -> { min = 2; max = 3; }  // age==3 → 2–3
-                            }
-                            int count = min + server.random.nextInt(max - min + 1);
-
-                            Block.popResource(server, targetPos, new ItemStack(Items.SWEET_BERRIES, count));
-                            // Reset bush to age 1 (vanilla-like behavior)
-                            server.setBlock(targetPos, state.setValue(BlockStateProperties.AGE_3, 1), Block.UPDATE_ALL);
-
-                            // Damage shears by 1
-                            stack.hurtAndBreak(1, server, null, null);
-                            return stack;
-                        }
-                    }
-                    return super.execute(source, stack);
+                    damageFromDispenser(stack, server);
+                    return stack;
                 }
-            };
 
-            DispenserBlock.registerBehavior(Items.SHEARS, shearsBehavior);
-        });
+                // PUMPKIN
+                if (block == Blocks.PUMPKIN) {
+                    server.setBlockState(targetPos, Blocks.AIR.getDefaultState(), Block.NOTIFY_ALL);
+                    drop(server, targetPos, new ItemStack(Items.PUMPKIN));
+                    damageFromDispenser(stack, server);
+                    return stack;
+                }
+
+                // SWEET BERRY BUSH
+                if (block == Blocks.SWEET_BERRY_BUSH && state.contains(Properties.AGE_3)) {
+                    int age = state.get(Properties.AGE_3);
+                    if (age >= 1 && age <= 3) {
+                        int min = (age == 1) ? 1 : (age == 2 ? 1 : 2);
+                        int max = (age == 1) ? 1 : (age == 2 ? 2 : 3);
+                        int count = min + server.random.nextInt(max - min + 1);
+
+                        drop(server, targetPos, new ItemStack(Items.SWEET_BERRIES, count));
+                        server.setBlockState(targetPos, state.with(Properties.AGE_3, 1), Block.NOTIFY_ALL);
+
+                        damageFromDispenser(stack, server);
+                        return stack;
+                    }
+                }
+
+                return super.dispenseSilently(pointer, stack);
+            }
+        };
+
+        DispenserBlock.registerBehavior(Items.SHEARS, shears);
+    }
+
+    private static void damageFromDispenser(ItemStack stack, ServerWorld server) {
+        stack.damage(1, server, null, item -> {});
+    }
+
+    private static void drop(ServerWorld world, BlockPos pos, ItemStack stack) {
+        if (stack.isEmpty()) return;
+        double x = pos.getX() + 0.5, y = pos.getY() + 0.5, z = pos.getZ() + 0.5;
+        world.spawnEntity(new ItemEntity(world, x, y, z, stack.copy()));
     }
 
     /* ===================== Helpers ===================== */
 
     private static boolean isWhitelistedBlock(Block block) {
-        if (block == Blocks.WHEAT)            return Config.ALLOW_WHEAT.get();
-        if (block == Blocks.CARROTS)          return Config.ALLOW_CARROTS.get();
-        if (block == Blocks.POTATOES)         return Config.ALLOW_POTATOES.get();
-        if (block == Blocks.BEETROOTS)        return Config.ALLOW_BEETROOTS.get();
+        if (block == Blocks.WHEAT)            return Config.ALLOW_WHEAT;
+        if (block == Blocks.CARROTS)          return Config.ALLOW_CARROTS;
+        if (block == Blocks.POTATOES)         return Config.ALLOW_POTATOES;
+        if (block == Blocks.BEETROOTS)        return Config.ALLOW_BEETROOTS;
         if (block == Blocks.TORCHFLOWER_CROP || block == Blocks.TORCHFLOWER)
-            return Config.ALLOW_TORCHFLOWER.get();
-        if (block == Blocks.NETHER_WART)      return Config.ALLOW_NETHER_WART.get();
-        if (block == Blocks.COCOA)            return Config.ALLOW_COCOA.get();
-        // Note: Sweet Berry Bush is handled above as a special case (no replant flow).
+            return Config.ALLOW_TORCHFLOWER;
+        if (block == Blocks.NETHER_WART)      return Config.ALLOW_NETHER_WART;
+        if (block == Blocks.COCOA)            return Config.ALLOW_COCOA;
         return false;
     }
 
     private static boolean heldMatchesBlock(ItemStack stack, Block block) {
-        if (block == Blocks.WHEAT)                 return stack.is(Items.WHEAT_SEEDS);
-        if (block == Blocks.CARROTS)               return stack.is(Items.CARROT);
-        if (block == Blocks.POTATOES)              return stack.is(Items.POTATO);
-        if (block == Blocks.BEETROOTS)             return stack.is(Items.BEETROOT_SEEDS);
+        if (block == Blocks.WHEAT)                 return stack.isOf(Items.WHEAT_SEEDS);
+        if (block == Blocks.CARROTS)               return stack.isOf(Items.CARROT);
+        if (block == Blocks.POTATOES)              return stack.isOf(Items.POTATO);
+        if (block == Blocks.BEETROOTS)             return stack.isOf(Items.BEETROOT_SEEDS);
         if (block == Blocks.TORCHFLOWER || block == Blocks.TORCHFLOWER_CROP)
-            return stack.is(Items.TORCHFLOWER_SEEDS);
-        if (block == Blocks.NETHER_WART)           return stack.is(Items.NETHER_WART);
-        if (block == Blocks.COCOA)                 return stack.is(Items.COCOA_BEANS);
+            return stack.isOf(Items.TORCHFLOWER_SEEDS);
+        if (block == Blocks.NETHER_WART)           return stack.isOf(Items.NETHER_WART);
+        if (block == Blocks.COCOA)                 return stack.isOf(Items.COCOA_BEANS);
         return false;
     }
 
     private static boolean isMature(BlockState state) {
         Block b = state.getBlock();
-        if (b instanceof CropBlock crop) return crop.isMaxAge(state);
-        if (b == Blocks.TORCHFLOWER) return true; // fully grown torchflower
-        if (b == Blocks.NETHER_WART) return state.getValue(BlockStateProperties.AGE_3) == 3;
-        if (b == Blocks.COCOA)       return state.getValue(BlockStateProperties.AGE_2) == 2;
+        if (b instanceof CropBlock crop) return crop.isMature(state);
+        if (b == Blocks.TORCHFLOWER) return true; // w pełni wyrośnięty kwiat
+        if (b == Blocks.NETHER_WART) return state.get(Properties.AGE_3) == 3;
+        if (b == Blocks.COCOA) {
+            if (state.contains(Properties.AGE_2)) return state.get(Properties.AGE_2) == 2; // 0..2
+            return false;
+        }
         return false;
     }
 
     private static Block resolveTargetReplantBlock(Block block) {
-        if (block instanceof CropBlock) return block; // wheat/carrots/potatoes/beetroots/torchflower_crop mid-growth
+        if (block instanceof CropBlock) return block;
         if (block == Blocks.TORCHFLOWER)   return Blocks.TORCHFLOWER_CROP;
         if (block == Blocks.NETHER_WART)   return Blocks.NETHER_WART;
         if (block == Blocks.COCOA)         return Blocks.COCOA;
@@ -292,5 +275,11 @@ public class AutoSow {
                 || b == Blocks.STRIPPED_JUNGLE_LOG
                 || b == Blocks.JUNGLE_WOOD
                 || b == Blocks.STRIPPED_JUNGLE_WOOD;
+    }
+
+    private static BlockState cocoaAge0State() {
+        BlockState s = Blocks.COCOA.getDefaultState();
+        if (s.contains(Properties.AGE_2)) return s.with(Properties.AGE_2, 0);
+        return s;
     }
 }
